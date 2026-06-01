@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Finance Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; font-size: 14px; min-height: 100vh; }
+  select, input { font-family: inherit; font-size: 14px; }
+  button { font-family: inherit; cursor: pointer; }
+  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #1e293b; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const CATS = {
+  income:   ["Salary","Business","Rental","Dividends","Freelance","Side Income","Other Income"],
+  expenses: ["Food & Drinks","Transport","Utilities","Groceries","Entertainment","Medical","Shopping","Subscriptions","Education","Personal Care","Other Expense"],
+  loans:    ["Home Loan","Car Loan","Personal Loan","Credit Card","BNPL","Study Loan","Other Loan"],
+  savings:  ["EPF / KWSP","ASB","Fixed Deposit","Unit Trust","Stocks / ETF","Crypto","Emergency Fund","Insurance","Other Savings"],
+};
+const TYPE_LABELS = { income:"Income", expenses:"Expenses", loans:"Loans / Debt", savings:"Savings & Invest" };
+const TYPE_COLORS = { income:"#22c55e", expenses:"#ef4444", loans:"#f97316", savings:"#3b82f6" };
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+const now = new Date();
+const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+const emptyForm = { type:"expenses", category:"", description:"", amount:"", month:defaultMonth, recurring:false };
+
+const fmt = n => Number(n).toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2});
+const mLabel = m => { const [y,mo]=m.split("-"); return `${MONTHS[parseInt(mo)-1]} ${y}`; };
+const STORAGE_KEY = "ft_records_v1";
+
+function loadRecords() {
+  try { const d = localStorage.getItem(STORAGE_KEY); return d ? JSON.parse(d) : []; } catch { return []; }
+}
+function saveRecords(recs) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(recs)); } catch {}
+}
+
+// ── Pill ──────────────────────────────────────────────────────────────────
+function Pill({type}) {
+  return <span style={{background:TYPE_COLORS[type]+"22",color:TYPE_COLORS[type],borderRadius:5,padding:"2px 8px",fontSize:12,fontWeight:600}}>{TYPE_LABELS[type]}</span>;
+}
+
+// ── Summary Tab ───────────────────────────────────────────────────────────
+function SummaryTab({records, allMonths}) {
+  const [month, setMonth] = useState(defaultMonth);
+  const recs = records.filter(r => r.month === month);
+  const totals = {income:0,expenses:0,loans:0,savings:0};
+  recs.forEach(r => totals[r.type] += r.amount);
+  const net = totals.income - totals.expenses - totals.loans - totals.savings;
+
+  const cats = {};
+  recs.forEach(r => {
+    if(!cats[r.type]) cats[r.type]={};
+    cats[r.type][r.category] = (cats[r.type][r.category]||0)+r.amount;
+  });
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+        <span style={{color:"#94a3b8",fontWeight:600}}>Month:</span>
+        <select value={month} onChange={e=>setMonth(e.target.value)} style={{background:"#1e293b",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"5px 10px"}}>
+          {(allMonths.length ? allMonths : [defaultMonth]).map(m=><option key={m} value={m}>{mLabel(m)}</option>)}
+        </select>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:12}}>
+        {Object.entries(totals).map(([t,v])=>(
+          <div key={t} style={{background:"#1e293b",borderRadius:10,padding:"14px 16px",borderLeft:`4px solid ${TYPE_COLORS[t]}`}}>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:600,textTransform:"uppercase",marginBottom:4}}>{TYPE_LABELS[t]}</div>
+            <div style={{fontSize:20,fontWeight:700,color:TYPE_COLORS[t]}}>RM {fmt(v)}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:"#1e293b",borderRadius:10,padding:"14px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontWeight:700,color:"#f1f5f9",fontSize:15}}>Net Cash Flow</div>
+        <div style={{fontSize:20,fontWeight:800,color:net>=0?"#22c55e":"#ef4444"}}>RM {fmt(net)}</div>
+      </div>
+      {Object.entries(cats).map(([t,c])=>(
+        <div key={t} style={{background:"#1e293b",borderRadius:10,padding:"14px 16px",marginBottom:10}}>
+          <div style={{fontWeight:700,color:TYPE_COLORS[t],marginBottom:10,fontSize:13}}>{TYPE_LABELS[t]} Breakdown</div>
+          {Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([cat,amt])=>(
+            <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #334155"}}>
+              <span style={{color:"#cbd5e1"}}>{cat}</span>
+              <span style={{fontWeight:600,color:"#f1f5f9"}}>RM {fmt(amt)}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+      {!recs.length && <div style={{color:"#475569",textAlign:"center",marginTop:40}}>No records for this month.</div>}
+    </div>
+  );
+}
+
+// ── Records Tab ───────────────────────────────────────────────────────────
+function RecordsTab({records, setRecords}) {
+  const [form, setForm] = useState(emptyForm);
+  const [editId, setEditId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [filterMonth, setFilterMonth] = useState(defaultMonth);
+  const [filterType, setFilterType] = useState("all");
+  const [sortCol, setSortCol] = useState("month");
+  const [sortAsc, setSortAsc] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+
+  const allMonths = [...new Set(records.map(r=>r.month))].sort((a,b)=>b.localeCompare(a));
+
+  const update = recs => { setRecords(recs); saveRecords(recs); };
+
+  const submit = () => {
+    if(!form.category||!form.amount||!form.month) { alert("Please fill in Type, Month, Category and Amount."); return; }
+    const rec = {...form, amount:parseFloat(form.amount), id: editId ?? Date.now()};
+    const updated = editId ? records.map(r=>r.id===editId?rec:r) : [rec,...records];
+    update(updated); setForm(emptyForm); setEditId(null); setShowForm(false);
+  };
+
+  const startEdit = r => { setForm({...r,amount:String(r.amount)}); setEditId(r.id); setShowForm(true); };
+  const confirmDelete = () => { update(records.filter(r=>r.id!==deleteId)); setDeleteId(null); };
+
+  const filtered = records.filter(r=>(filterMonth==="all"||r.month===filterMonth)&&(filterType==="all"||r.type===filterType));
+  const sorted = [...filtered].sort((a,b)=>{
+    let va=a[sortCol],vb=b[sortCol];
+    if(sortCol==="amount"){va=parseFloat(va);vb=parseFloat(vb);}
+    return sortAsc?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0);
+  });
+  const toggleSort = col => { if(sortCol===col) setSortAsc(a=>!a); else {setSortCol(col);setSortAsc(true);} };
+  const thStyle = {padding:"10px 12px",color:"#64748b",fontSize:11,fontWeight:700,cursor:"pointer",userSelect:"none",whiteSpace:"nowrap",textAlign:"left"};
+
+  // export CSV
+  const exportCSV = () => {
+    const rows = [["Month","Type","Category","Description","Amount","Recurring"],...records.map(r=>[mLabel(r.month),TYPE_LABELS[r.type],r.category,r.description||"",r.amount,r.recurring?"Yes":"No"])];
+    const csv = rows.map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
+    const a = document.createElement("a"); a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv); a.download="finance-tracker.csv"; a.click();
+  };
+
+  return (
+    <div>
+      {/* Delete confirm modal */}
+      {deleteId && (
+        <div style={{position:"fixed",inset:0,background:"#000a",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:"#1e293b",borderRadius:12,padding:24,width:300,border:"1px solid #334155"}}>
+            <div style={{fontWeight:700,marginBottom:8,color:"#f1f5f9"}}>Delete this record?</div>
+            <div style={{color:"#94a3b8",marginBottom:20,fontSize:13}}>This cannot be undone.</div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={confirmDelete} style={{flex:1,background:"#ef4444",color:"#fff",border:"none",borderRadius:7,padding:"8px 0",fontWeight:700}}>Delete</button>
+              <button onClick={()=>setDeleteId(null)} style={{flex:1,background:"#334155",color:"#e2e8f0",border:"none",borderRadius:7,padding:"8px 0",fontWeight:700}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toolbar */}
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <button onClick={()=>{setForm(emptyForm);setEditId(null);setShowForm(v=>!v);}} style={{background:showForm?"#475569":"#3b82f6",color:"#fff",border:"none",borderRadius:7,padding:"7px 16px",fontWeight:700,fontSize:13}}>
+          {showForm?"✕ Cancel":"+ Add Entry"}
+        </button>
+        <button onClick={exportCSV} style={{background:"#1e293b",color:"#94a3b8",border:"1px solid #334155",borderRadius:7,padding:"7px 14px",fontWeight:600,fontSize:13}}>⬇ Export CSV</button>
+      </div>
+
+      {/* Form */}
+      {showForm && (
+        <div style={{background:"#1e293b",borderRadius:10,padding:16,marginBottom:16,border:"1px solid #334155"}}>
+          <div style={{fontWeight:700,marginBottom:12,color:"#f1f5f9"}}>{editId?"Edit Entry":"New Entry"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>TYPE</label>
+              <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value,category:""}))} style={{width:"100%",background:"#0f172a",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"7px 10px"}}>
+                {Object.entries(TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>MONTH</label>
+              <input type="month" value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))} style={{width:"100%",background:"#0f172a",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"7px 10px"}}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>CATEGORY</label>
+              <select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} style={{width:"100%",background:"#0f172a",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"7px 10px"}}>
+                <option value="">Select...</option>
+                {CATS[form.type].map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>AMOUNT (RM)</label>
+              <input type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder="0.00" style={{width:"100%",background:"#0f172a",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"7px 10px"}}/>
+            </div>
+            <div style={{gridColumn:"1/-1"}}>
+              <label style={{fontSize:11,color:"#64748b",display:"block",marginBottom:4}}>DESCRIPTION (optional)</label>
+              <input type="text" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="e.g. TNB bill, Maybank car loan, Shopee haul..." style={{width:"100%",background:"#0f172a",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"7px 10px"}}/>
+            </div>
+            <div style={{gridColumn:"1/-1",display:"flex",alignItems:"center",gap:8}}>
+              <input type="checkbox" id="rec" checked={form.recurring} onChange={e=>setForm(f=>({...f,recurring:e.target.checked}))} style={{accentColor:"#3b82f6",width:15,height:15}}/>
+              <label htmlFor="rec" style={{color:"#94a3b8",fontSize:13}}>Recurring monthly</label>
+            </div>
+          </div>
+          <button onClick={submit} style={{marginTop:12,background:"#22c55e",color:"#fff",border:"none",borderRadius:7,padding:"8px 22px",fontWeight:700,fontSize:14}}>
+            {editId?"Save Changes":"Add Entry"}
+          </button>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+        <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} style={{background:"#1e293b",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"6px 10px"}}>
+          <option value="all">All Months</option>
+          {allMonths.map(m=><option key={m} value={m}>{mLabel(m)}</option>)}
+        </select>
+        <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={{background:"#1e293b",color:"#e2e8f0",border:"1px solid #334155",borderRadius:6,padding:"6px 10px"}}>
+          <option value="all">All Types</option>
+          {Object.entries(TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+        <span style={{marginLeft:"auto",color:"#64748b",fontSize:13}}>{sorted.length} record{sorted.length!==1?"s":""}</span>
+      </div>
+
+      {/* Table */}
+      <div style={{background:"#1e293b",borderRadius:10,overflow:"auto",border:"1px solid #334155"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",minWidth:560}}>
+          <thead>
+            <tr style={{background:"#0f172a"}}>
+              {[["month","Month"],["type","Type"],["category","Category"],["description","Description"],["amount","Amount (RM)"]].map(([col,lbl])=>(
+                <th key={col} onClick={()=>toggleSort(col)} style={{...thStyle,textAlign:col==="amount"?"right":"left"}}>
+                  {lbl} {sortCol===col?(sortAsc?"▲":"▼"):""}
+                </th>
+              ))}
+              <th style={{...thStyle,width:70}}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {!sorted.length && <tr><td colSpan={6} style={{textAlign:"center",padding:36,color:"#475569"}}>No records yet — add your first entry above.</td></tr>}
+            {sorted.map((r,i)=>(
+              <tr key={r.id} style={{borderTop:"1px solid #0f172a",background:i%2===0?"#1e293b":"#162032"}}>
+                <td style={{padding:"9px 12px",color:"#94a3b8",whiteSpace:"nowrap"}}>{mLabel(r.month)}</td>
+                <td style={{padding:"9px 12px"}}><Pill type={r.type}/>{r.recurring&&<span style={{marginLeft:5,fontSize:11,color:"#64748b"}}>🔄</span>}</td>
+                <td style={{padding:"9px 12px",color:"#cbd5e1"}}>{r.category}</td>
+                <td style={{padding:"9px 12px",color:"#64748b",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.description||"—"}</td>
+                <td style={{padding:"9px 12px",textAlign:"right",fontWeight:700,color:TYPE_COLORS[r.type],whiteSpace:"nowrap"}}>
+                  {r.type==="income"?"+":"-"}RM {fmt(r.amount)}
+                </td>
+                <td style={{padding:"9px 12px",textAlign:"right",whiteSpace:"nowrap"}}>
+                  <button onClick={()=>startEdit(r)} style={{background:"none",border:"none",color:"#64748b",fontSize:15,marginRight:4,cursor:"pointer"}} title="Edit">✏️</button>
+                  <button onClick={()=>setDeleteId(r.id)} style={{background:"none",border:"none",color:"#64748b",fontSize:15,cursor:"pointer"}} title="Delete">🗑️</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Totals */}
+      {sorted.length>0 && (
+        <div style={{marginTop:10,background:"#1e293b",borderRadius:8,padding:"10px 16px",display:"flex",gap:20,flexWrap:"wrap"}}>
+          {Object.entries(TYPE_LABELS).map(([t,lbl])=>{
+            const total=sorted.filter(r=>r.type===t).reduce((s,r)=>s+r.amount,0);
+            if(!total) return null;
+            return <div key={t}><span style={{color:"#64748b",fontSize:12}}>{lbl}: </span><span style={{fontWeight:700,color:TYPE_COLORS[t]}}>RM {fmt(total)}</span></div>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────
+function App() {
+  const [records, setRecords] = useState(loadRecords);
+  const [tab, setTab] = useState("records");
+  const allMonths = [...new Set(records.map(r=>r.month))].sort((a,b)=>b.localeCompare(a));
+
+  const btnStyle = active => ({
+    padding:"7px 16px", borderRadius:6, border:"none", cursor:"pointer",
+    fontWeight:600, fontSize:13,
+    background: active?"#3b82f6":"#334155",
+    color: active?"#fff":"#94a3b8"
+  });
+
+  return (
+    <div style={{minHeight:"100vh"}}>
+      <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"13px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:10}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:17,color:"#f1f5f9"}}>💰 Finance Tracker</div>
+          <div style={{fontSize:11,color:"#64748b"}}>Personal · Ringgit Malaysia</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setTab("records")} style={btnStyle(tab==="records")}>Records</button>
+          <button onClick={()=>setTab("summary")} style={btnStyle(tab==="summary")}>Summary</button>
+        </div>
+      </div>
+      <div style={{padding:"18px 20px",maxWidth:960,margin:"0 auto"}}>
+        {tab==="records" && <RecordsTab records={records} setRecords={setRecords}/>}
+        {tab==="summary" && <SummaryTab records={records} allMonths={allMonths}/>}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
